@@ -29,6 +29,11 @@
       "eas": {
         "projectId": "cabffc69-401b-4931-bcf7-920627d78976"
       },
+      "appStoreConnect": {
+        "apiKeyId": "0QRKHMVYGSSV",
+        "issuerId": "ee3f6ad1-1bea-44e4-974c-a11a96ce3500",
+        "teamId": "7CA82NG86F"
+      },
       "googlePlay": {
         "appId": "7876925448502649783"
       }
