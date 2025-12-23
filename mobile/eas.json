@@ -13,7 +13,8 @@
   "submit": {
     "production": {
       "ios": {
-        "appleApiKeyId": "0QRKHMVYGSSV",
+        "ascApiKeyId": "0QRKHMVYGSSV",
+        "ascApiKeyIssuerId": "ee3f6ad1-1bea-44e4-974c-a11a96ce3500",
         "appleTeamId": "7CA82NG86F"
       }
     }
