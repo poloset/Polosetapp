@@ -28,6 +28,9 @@
     "extra": {
       "eas": {
         "projectId": "cabffc69-401b-4931-bcf7-920627d78976"
+      },
+      "googlePlay": {
+        "appId": "7876925448502649783"
       }
     }
   }
