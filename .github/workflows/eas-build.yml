@@ -1,4 +1,4 @@
-name: EAS Build (Android + iOS)
+name: EAS Build (Android + iOS) and download artifacts
 
 on:
   push:
@@ -9,36 +9,9 @@ env:
   NODE_VERSION: 18
 
 jobs:
-  prepare:
-    name: Prepare cache keys
-    runs-on: ubuntu-latest
-    outputs:
-      cache-key: ${{ steps.cache-key.outputs.key }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - id: cache-key
-        shell: bash
-        run: |
-          # Compose a cache key based on lockfile (falls back to package.json, then date)
-          if [ -f package-lock.json ]; then
-            KEY_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
-          elif [ -f yarn.lock ]; then
-            KEY_HASH=$(sha256sum yarn.lock | cut -d' ' -f1)
-          elif [ -f pnpm-lock.yaml ]; then
-            KEY_HASH=$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)
-          elif [ -f package.json ]; then
-            KEY_HASH=$(sha256sum package.json | cut -d' ' -f1)
-          else
-            KEY_HASH=$(date +%Y%m%d)
-          fi
-          echo "key=node-${KEY_HASH}" >> "$GITHUB_OUTPUT"
-
   build-android:
-    name: Build Android (EAS)
+    name: Build & download Android (EAS)
     runs-on: ubuntu-latest
-    needs: prepare
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,24 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Cache node modules and npm cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ needs.prepare.outputs.cache-key }}-npm-${{ runner.os }}
-          restore-keys: |
-            ${{ needs.prepare.outputs.cache-key }}-npm-
-
-      - name: Restore Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.gradle/caches
-          key: ${{ needs.prepare.outputs.cache-key }}-gradle-${{ runner.os }}
-          restore-keys: |
-            ${{ needs.prepare.outputs.cache-key }}-gradle-
 
       - name: Install dependencies
         run: npm ci
@@ -75,42 +30,46 @@ jobs:
       - name: Expo login (CI)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas login --token "$EXPO_TOKEN"
-
-      # Optional: decode Android keystore if provided as secret ANDROID_KEYSTORE_BASE64
-      - name: Decode Android keystore (optional)
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          mkdir -p ./keystore
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > ./keystore/keystore.jks
-          ls -l ./keystore
+          eas login --token "$EXPO_TOKEN"
 
-      - name: Run EAS build (Android production)
+      - name: Run EAS build (Android production) and save JSON
+        id: android_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          # non-interactive build
-          eas build --platform android --profile production --non-interactive
+          set -e
+          # Run build and emit machine-readable JSON to file
+          eas build --platform android --profile production --non-interactive --json > android_build.json
+          cat android_build.json
+          # Extract build id using node (portable)
+          BUILD_ID=$(node -e "const j=require('./android_build.json'); console.log(j.id || j.buildId || (j.data && j.data.id) || '')")
+          if [ -z "$BUILD_ID" ]; then
+            echo "ERROR: could not extract Android build id from JSON"
+            exit 2
+          fi
+          echo "android_build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
 
-      - name: List recent builds (Android)
+      - name: Download Android artifact
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas build:list --platform android --limit 5 > android_builds.txt || true
-          cat android_builds.txt
+          set -e
+          mkdir -p artifacts/android
+          echo "Downloading build id: ${{ steps.android_build.outputs.android_build_id }}"
+          eas build:download --platform android --id "${{ steps.android_build.outputs.android_build_id }}" --output ./artifacts/android || true
+          ls -la artifacts/android || true
 
-      - name: Upload Android build list as artifact
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: android-build-list
-          path: android_builds.txt
+          name: android-artifacts
+          path: artifacts/android
 
   build-ios:
-    name: Build iOS (EAS)
+    name: Build & download iOS (EAS)
     runs-on: macos-latest
-    needs: [prepare, build-android]
+    needs: build-android
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -119,16 +78,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-
-      - name: Cache node modules and npm cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ needs.prepare.outputs.cache-key }}-npm-${{ runner.os }}
-          restore-keys: |
-            ${{ needs.prepare.outputs.cache-key }}-npm-
 
       - name: Install dependencies
         run: npm ci
@@ -139,9 +88,10 @@ jobs:
       - name: Expo login (CI)
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas login --token "$EXPO_TOKEN"
+        run: |
+          eas login --token "$EXPO_TOKEN"
 
-      # Optional: write Apple API Key json to disk if provided
+      # Optional: write Apple API Key JSON to file if provided (for non-interactive credential use)
       - name: Write Apple API Key JSON (optional)
         if: ${{ secrets.APPLE_API_KEY_JSON != '' }}
         env:
@@ -150,22 +100,34 @@ jobs:
           echo "$APPLE_API_KEY_JSON" > ./apple_api_key.json
           ls -l ./apple_api_key.json
 
-      - name: Run EAS build (iOS production)
+      - name: Run EAS build (iOS production) and save JSON
+        id: ios_build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas build --platform ios --profile production --non-interactive
+          set -e
+          eas build --platform ios --profile production --non-interactive --json > ios_build.json
+          cat ios_build.json
+          BUILD_ID=$(node -e "const j=require('./ios_build.json'); console.log(j.id || j.buildId || (j.data && j.data.id) || '')")
+          if [ -z "$BUILD_ID" ]; then
+            echo "ERROR: could not extract iOS build id from JSON"
+            exit 2
+          fi
+          echo "ios_build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
 
-      - name: List recent builds (iOS)
+      - name: Download iOS artifact
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas build:list --platform ios --limit 5 > ios_builds.txt || true
-          cat ios_builds.txt
+          set -e
+          mkdir -p artifacts/ios
+          echo "Downloading build id: ${{ steps.ios_build.outputs.ios_build_id }}"
+          eas build:download --platform ios --id "${{ steps.ios_build.outputs.ios_build_id }}" --output ./artifacts/ios || true
+          ls -la artifacts/ios || true
 
-      - name: Upload iOS build list as artifact
+      - name: Upload iOS artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-list
-          path: ios_builds.txt
+          name: ios-artifacts
+          path: artifacts/ios
 
