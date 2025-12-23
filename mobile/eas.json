@@ -13,6 +13,7 @@
   "submit": {
     "production": {
       "ios": {
+        "appleApiKeyId": "0QRKHMVYGSSV",
         "appleTeamId": "7CA82NG86F"
       }
     }
