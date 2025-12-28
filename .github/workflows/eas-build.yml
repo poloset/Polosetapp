@@ -68,13 +68,14 @@ jobs:
           cd ..
           cat android_build_view.json
           BUILD_URL=$(node -e "const j=require('./android_build_view.json'); const a=j?.artifacts||{}; console.log(a.buildUrl || a.applicationArchiveUrl || a.aabUrl || a.apkUrl || a.ipaUrl || '')")
-          if [ -z \"$BUILD_URL\" ]; then
-            echo \"ERROR: could not find Android artifact URL in build:view JSON\"
+          if [ -z "$BUILD_URL" ]; then
+            echo "ERROR: could not find Android artifact URL in build:view JSON"
             exit 2
           fi
-          OUT=\"./artifacts/android/build-${{ steps.android_build.outputs.android_build_id }}.aab\"
-          echo \"Downloading: $BUILD_URL\"
-          curl -L --retry 5 --retry-delay 2 -o \"$OUT\" \"$BUILD_URL\"
+          EXT=$(node -e "const u=process.argv[1]||''; const m=u.match(/\\.([a-zA-Z0-9]+)(?:\\?|$)/); console.log(m?m[1]:'aab')" "$BUILD_URL")
+          OUT="./artifacts/android/build-${{ steps.android_build.outputs.android_build_id }}.${EXT}"
+          echo "Downloading: $BUILD_URL"
+          curl -fL --retry 5 --retry-delay 2 -o "$OUT" "$BUILD_URL"
           ls -la artifacts/android
           cp android_build.json artifacts/android/android_build.json
           cp android_build_view.json artifacts/android/android_build_view.json
@@ -152,13 +153,14 @@ jobs:
           cd ..
           cat ios_build_view.json
           BUILD_URL=$(node -e "const j=require('./ios_build_view.json'); const a=j?.artifacts||{}; console.log(a.buildUrl || a.applicationArchiveUrl || a.ipaUrl || '')")
-          if [ -z \"$BUILD_URL\" ]; then
-            echo \"ERROR: could not find iOS artifact URL in build:view JSON\"
+          if [ -z "$BUILD_URL" ]; then
+            echo "ERROR: could not find iOS artifact URL in build:view JSON"
             exit 2
           fi
-          OUT=\"./artifacts/ios/build-${{ steps.ios_build.outputs.ios_build_id }}.ipa\"
-          echo \"Downloading: $BUILD_URL\"
-          curl -L --retry 5 --retry-delay 2 -o \"$OUT\" \"$BUILD_URL\"
+          EXT=$(node -e "const u=process.argv[1]||''; const m=u.match(/\\.([a-zA-Z0-9]+)(?:\\?|$)/); console.log(m?m[1]:'ipa')" "$BUILD_URL")
+          OUT="./artifacts/ios/build-${{ steps.ios_build.outputs.ios_build_id }}.${EXT}"
+          echo "Downloading: $BUILD_URL"
+          curl -fL --retry 5 --retry-delay 2 -o "$OUT" "$BUILD_URL"
           ls -la artifacts/ios
           cp ios_build.json artifacts/ios/ios_build.json
           cp ios_build_view.json artifacts/ios/ios_build_view.json
