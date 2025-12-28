@@ -12,6 +12,8 @@ jobs:
   build:
     name: Build & download Android + iOS (EAS)
     runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,16 +33,27 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      - name: Expo login (CI)
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Verify Expo token is present
         run: |
-          eas login --token "$EXPO_TOKEN"
+          if [ -z "${EXPO_TOKEN:-}" ]; then
+            echo "ERROR: Missing EXPO_TOKEN secret. Add it in GitHub: Settings → Secrets and variables → Actions."
+            exit 2
+          fi
+
+      # Optional: provide App Store Connect API Key .p8 for future `eas submit` usage
+      # Store the *base64* of the downloaded .p8 as GitHub secret APPLE_API_KEY_P8_BASE64.
+      - name: Write App Store Connect API key file (optional)
+        if: ${{ secrets.APPLE_API_KEY_P8_BASE64 != '' }}
+        working-directory: mobile
+        env:
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          set -e
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode > asc-api-key.p8
+          chmod 600 asc-api-key.p8
 
       - name: Run EAS build (Android + iOS production) and save JSON
         id: builds
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -e
           # Run builds and emit machine-readable JSON to file
