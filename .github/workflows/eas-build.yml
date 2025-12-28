@@ -93,7 +93,7 @@ jobs:
 
       # Optional: write Apple API Key JSON to file if provided (for non-interactive credential use)
       - name: Write Apple API Key JSON (optional)
-        if: ${{ secrets.APPLE_API_KEY_JSON != '' }}
+        if: ${{ secrets. 0QRKHMVYGSSV!= '' }}
         env:
           APPLE_API_KEY_JSON: ${{ secrets.APPLE_API_KEY_JSON }}
         run: |
