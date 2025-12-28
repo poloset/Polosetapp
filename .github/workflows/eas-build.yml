@@ -9,8 +9,8 @@ env:
   NODE_VERSION: 18
 
 jobs:
-  build-android:
-    name: Build & download Android (EAS)
+  build:
+    name: Build & download Android + iOS (EAS)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,24 +37,25 @@ jobs:
         run: |
           eas login --token "$EXPO_TOKEN"
 
-      - name: Run EAS build (Android production) and save JSON
-        id: android_build
+      - name: Run EAS build (Android + iOS production) and save JSON
+        id: builds
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -e
-          # Run build and emit machine-readable JSON to file
+          # Run builds and emit machine-readable JSON to file
           cd mobile
-          eas build --platform android --profile production --non-interactive --json --wait > ../android_build.json
+          eas build --platform all --profile production --non-interactive --json --wait > ../builds.json
           cd ..
-          cat android_build.json
-          # Extract build id using node (portable)
-          BUILD_ID=$(node -e "const j=require('./android_build.json'); const b=Array.isArray(j)? j[0]: (j.build??j.data??j); console.log(b?.id || b?.buildId || b?.data?.id || '')")
-          if [ -z "$BUILD_ID" ]; then
-            echo "ERROR: could not extract Android build id from JSON"
+          cat builds.json
+          ANDROID_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:[j]; const b=arr.find(x=>x?.platform==='android') || arr.find(x=>x?.data?.platform==='android'); const v=b?.id||b?.buildId||b?.data?.id||''; console.log(v)")
+          IOS_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:[j]; const b=arr.find(x=>x?.platform==='ios') || arr.find(x=>x?.data?.platform==='ios'); const v=b?.id||b?.buildId||b?.data?.id||''; console.log(v)")
+          if [ -z "$ANDROID_BUILD_ID" ] || [ -z "$IOS_BUILD_ID" ]; then
+            echo "ERROR: could not extract build IDs from JSON"
             exit 2
           fi
-          echo "android_build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "android_build_id=$ANDROID_BUILD_ID" >> "$GITHUB_OUTPUT"
+          echo "ios_build_id=$IOS_BUILD_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download Android artifact
         env:
@@ -62,9 +63,9 @@ jobs:
         run: |
           set -e
           mkdir -p artifacts/android
-          echo "Downloading build id: ${{ steps.android_build.outputs.android_build_id }}"
+          echo "Downloading build id: ${{ steps.builds.outputs.android_build_id }}"
           cd mobile
-          eas build:view "${{ steps.android_build.outputs.android_build_id }}" --json > ../android_build_view.json
+          eas build:view "${{ steps.builds.outputs.android_build_id }}" --json > ../android_build_view.json
           cd ..
           cat android_build_view.json
           BUILD_URL=$(node -e "const j=require('./android_build_view.json'); const a=j?.artifacts||{}; console.log(a.buildUrl || a.applicationArchiveUrl || a.aabUrl || a.apkUrl || a.ipaUrl || '')")
@@ -73,11 +74,11 @@ jobs:
             exit 2
           fi
           EXT=$(node -e "const u=process.argv[1]||''; const m=u.match(/\\.([a-zA-Z0-9]+)(?:\\?|$)/); console.log(m?m[1]:'aab')" "$BUILD_URL")
-          OUT="./artifacts/android/build-${{ steps.android_build.outputs.android_build_id }}.${EXT}"
+          OUT="./artifacts/android/build-${{ steps.builds.outputs.android_build_id }}.${EXT}"
           echo "Downloading: $BUILD_URL"
           curl -fL --retry 5 --retry-delay 2 -o "$OUT" "$BUILD_URL"
           ls -la artifacts/android
-          cp android_build.json artifacts/android/android_build.json
+          cp builds.json artifacts/android/builds.json
           cp android_build_view.json artifacts/android/android_build_view.json
 
       - name: Upload Android artifacts
@@ -86,70 +87,15 @@ jobs:
           name: android-artifacts
           path: artifacts/android
 
-  build-ios:
-    name: Build & download iOS (EAS)
-    runs-on: macos-latest
-    needs: build-android
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        working-directory: mobile
-        run: bun install --frozen-lockfile
-
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Expo login (CI)
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          eas login --token "$EXPO_TOKEN"
-
-      # Optional: write Apple API Key JSON to file if provided (for non-interactive credential use)
-      - name: Write Apple API Key JSON (optional)
-        if: ${{ secrets.APPLE_API_KEY_JSON != '' }}
-        env:
-          APPLE_API_KEY_JSON: ${{ secrets.APPLE_API_KEY_JSON }}
-        run: |
-          echo "$APPLE_API_KEY_JSON" > ./apple_api_key.json
-          ls -l ./apple_api_key.json
-
-      - name: Run EAS build (iOS production) and save JSON
-        id: ios_build
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          set -e
-          cd mobile
-          eas build --platform ios --profile production --non-interactive --json --wait > ../ios_build.json
-          cd ..
-          cat ios_build.json
-          BUILD_ID=$(node -e "const j=require('./ios_build.json'); const b=Array.isArray(j)? j[0]: (j.build??j.data??j); console.log(b?.id || b?.buildId || b?.data?.id || '')")
-          if [ -z "$BUILD_ID" ]; then
-            echo "ERROR: could not extract iOS build id from JSON"
-            exit 2
-          fi
-          echo "ios_build_id=$BUILD_ID" >> "$GITHUB_OUTPUT"
-
       - name: Download iOS artifact
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -e
           mkdir -p artifacts/ios
-          echo "Downloading build id: ${{ steps.ios_build.outputs.ios_build_id }}"
+          echo "Downloading build id: ${{ steps.builds.outputs.ios_build_id }}"
           cd mobile
-          eas build:view "${{ steps.ios_build.outputs.ios_build_id }}" --json > ../ios_build_view.json
+          eas build:view "${{ steps.builds.outputs.ios_build_id }}" --json > ../ios_build_view.json
           cd ..
           cat ios_build_view.json
           BUILD_URL=$(node -e "const j=require('./ios_build_view.json'); const a=j?.artifacts||{}; console.log(a.buildUrl || a.applicationArchiveUrl || a.ipaUrl || '')")
@@ -158,11 +104,11 @@ jobs:
             exit 2
           fi
           EXT=$(node -e "const u=process.argv[1]||''; const m=u.match(/\\.([a-zA-Z0-9]+)(?:\\?|$)/); console.log(m?m[1]:'ipa')" "$BUILD_URL")
-          OUT="./artifacts/ios/build-${{ steps.ios_build.outputs.ios_build_id }}.${EXT}"
+          OUT="./artifacts/ios/build-${{ steps.builds.outputs.ios_build_id }}.${EXT}"
           echo "Downloading: $BUILD_URL"
           curl -fL --retry 5 --retry-delay 2 -o "$OUT" "$BUILD_URL"
           ls -la artifacts/ios
-          cp ios_build.json artifacts/ios/ios_build.json
+          cp builds.json artifacts/ios/builds.json
           cp ios_build_view.json artifacts/ios/ios_build_view.json
 
       - name: Upload iOS artifacts

@@ -40,6 +40,9 @@
       "googlePlay": {
         "appId": "7876925448502649783"
       }
-    }
+    },
+    "plugins": [
+      "expo-localization"
+    ]
   }
 }
