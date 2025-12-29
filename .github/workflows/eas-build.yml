@@ -69,8 +69,18 @@ jobs:
           set -euo pipefail
           # Run builds and emit machine-readable JSON to file
           cd mobile
-          eas build --platform all --profile production --non-interactive --json --wait > ../builds.json
+          # Note: keep stdout as JSON, but capture stderr for real failure reasons.
+          eas whoami || true
+          eas build --platform all --profile production --non-interactive --json --wait --verbose-logs --build-logger-level debug \
+            > ../builds.json 2> ../eas_build_stderr.log
           cd ..
+
+          # If EAS printed non-JSON output to stderr, include it in logs.
+          if [ -s eas_build_stderr.log ]; then
+            echo "----- eas build stderr (for debugging) -----"
+            cat eas_build_stderr.log
+            echo "----- end eas build stderr -----"
+          fi
 
           # EAS CLI JSON shape can vary across versions; normalize to an array of build objects.
           ANDROID_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:(j?.data?.builds??j?.builds??j?.data??j?.build??[j]); const builds=Array.isArray(arr)?arr:[arr]; const b=builds.find(x=>x?.platform==='android') || builds.find(x=>x?.data?.platform==='android'); console.log((b?.id||b?.buildId||b?.data?.id||'').toString())")
@@ -137,4 +147,11 @@ jobs:
         with:
           name: ios-artifacts
           path: artifacts/ios
+
+      - name: Upload EAS build stderr (if any)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eas-build-stderr
+          path: eas_build_stderr.log
 
