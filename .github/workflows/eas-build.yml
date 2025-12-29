@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 360
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,13 +51,14 @@ jobs:
       # Optional: provide App Store Connect API Key .p8 for future `eas submit` usage
       # Store the *base64* of the downloaded .p8 as GitHub secret APPLE_API_KEY_P8_BASE64.
       - name: Write App Store Connect API key file (optional)
-        if: ${{ secrets.APPLE_API_KEY_P8_BASE64 != '' }}
         working-directory: mobile
-        env:
-          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "${APPLE_API_KEY_P8_BASE64:-}" ]; then
+            echo "APPLE_API_KEY_P8_BASE64 not set; skipping asc-api-key.p8 creation."
+            exit 0
+          fi
           printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode > asc-api-key.p8
           chmod 600 asc-api-key.p8
 
