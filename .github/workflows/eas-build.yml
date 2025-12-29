@@ -8,10 +8,15 @@ on:
 env:
   NODE_VERSION: 18
 
+concurrency:
+  group: eas-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build & download Android + iOS (EAS)
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
     steps:
@@ -34,7 +39,9 @@ jobs:
         run: npm install -g eas-cli
 
       - name: Verify Expo token is present
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -z "${EXPO_TOKEN:-}" ]; then
             echo "ERROR: Missing EXPO_TOKEN secret. Add it in GitHub: Settings → Secrets and variables → Actions."
             exit 2
@@ -47,22 +54,25 @@ jobs:
         working-directory: mobile
         env:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           printf '%s' "$APPLE_API_KEY_P8_BASE64" | base64 --decode > asc-api-key.p8
           chmod 600 asc-api-key.p8
 
       - name: Run EAS build (Android + iOS production) and save JSON
         id: builds
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           # Run builds and emit machine-readable JSON to file
           cd mobile
           eas build --platform all --profile production --non-interactive --json --wait > ../builds.json
           cd ..
-          cat builds.json
-          ANDROID_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:[j]; const b=arr.find(x=>x?.platform==='android') || arr.find(x=>x?.data?.platform==='android'); const v=b?.id||b?.buildId||b?.data?.id||''; console.log(v)")
-          IOS_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:[j]; const b=arr.find(x=>x?.platform==='ios') || arr.find(x=>x?.data?.platform==='ios'); const v=b?.id||b?.buildId||b?.data?.id||''; console.log(v)")
+
+          # EAS CLI JSON shape can vary across versions; normalize to an array of build objects.
+          ANDROID_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:(j?.data?.builds??j?.builds??j?.data??j?.build??[j]); const builds=Array.isArray(arr)?arr:[arr]; const b=builds.find(x=>x?.platform==='android') || builds.find(x=>x?.data?.platform==='android'); console.log((b?.id||b?.buildId||b?.data?.id||'').toString())")
+          IOS_BUILD_ID=$(node -e "const j=require('./builds.json'); const arr=Array.isArray(j)?j:(j?.data?.builds??j?.builds??j?.data??j?.build??[j]); const builds=Array.isArray(arr)?arr:[arr]; const b=builds.find(x=>x?.platform==='ios') || builds.find(x=>x?.data?.platform==='ios'); console.log((b?.id||b?.buildId||b?.data?.id||'').toString())")
           if [ -z "$ANDROID_BUILD_ID" ] || [ -z "$IOS_BUILD_ID" ]; then
             echo "ERROR: could not extract build IDs from JSON"
             exit 2
@@ -71,16 +81,14 @@ jobs:
           echo "ios_build_id=$IOS_BUILD_ID" >> "$GITHUB_OUTPUT"
 
       - name: Download Android artifact
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p artifacts/android
           echo "Downloading build id: ${{ steps.builds.outputs.android_build_id }}"
           cd mobile
           eas build:view "${{ steps.builds.outputs.android_build_id }}" --json > ../android_build_view.json
           cd ..
-          cat android_build_view.json
           BUILD_URL=$(node -e "const j=require('./android_build_view.json'); const a=j?.artifacts||{}; console.log(a.buildUrl || a.applicationArchiveUrl || a.aabUrl || a.apkUrl || a.ipaUrl || '')")
           if [ -z "$BUILD_URL" ]; then
             echo "ERROR: could not find Android artifact URL in build:view JSON"
@@ -101,16 +109,14 @@ jobs:
           path: artifacts/android
 
       - name: Download iOS artifact
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p artifacts/ios
           echo "Downloading build id: ${{ steps.builds.outputs.ios_build_id }}"
           cd mobile
           eas build:view "${{ steps.builds.outputs.ios_build_id }}" --json > ../ios_build_view.json
           cd ..
-          cat ios_build_view.json
           BUILD_URL=$(node -e "const j=require('./ios_build_view.json'); const a=j?.artifacts||{}; console.log(a.buildUrl || a.applicationArchiveUrl || a.ipaUrl || '')")
           if [ -z "$BUILD_URL" ]; then
             echo "ERROR: could not find iOS artifact URL in build:view JSON"
