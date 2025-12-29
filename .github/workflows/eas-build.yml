@@ -29,12 +29,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Install dependencies
         working-directory: mobile
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Install EAS CLI
         run: npm install -g eas-cli
@@ -154,4 +151,5 @@ jobs:
         with:
           name: eas-build-stderr
           path: eas_build_stderr.log
+          if-no-files-found: ignore
 
