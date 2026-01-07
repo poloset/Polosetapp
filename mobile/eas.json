@@ -1,0 +1,24 @@
+{
+  "cli": {
+    "version": ">= 16.0.0"
+  },
+  "build": {
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {}
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascApiKeyId": "0QRKHMVYGSSV",
+        "ascApiKeyIssuerId": "ee3f6ad1-1bea-44e4-974c-a11a96ce3500",
+        "ascApiKeyPath": "./asc-api-key.p8",
+        "appleTeamId": "7CA82NG86F"
+      }
+    }
+  }
+}
+
